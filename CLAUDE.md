@@ -56,6 +56,77 @@ lib/
 - Auth guard in `dashboard/layout.jsx` — redirects to `/login` if no session
 - Auth state tracked via `supabase.auth.onAuthStateChange` subscription
 
+## Database Schema (Supabase)
+
+All tables use UUID primary keys and `created_at` timestamps. Auth-linked columns default to `auth.uid()`.
+
+### schedules
+Personal class schedule entries.
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid | PK, `gen_random_uuid()` |
+| created_at | timestamptz | |
+| user_id | uuid | FK → auth.users, default `auth.uid()` |
+| class_name | text | |
+| day_of_week | text | |
+| start_time | time | |
+| end_time | time | |
+| color | text | nullable |
+
+### groups
+User-created groups with invite codes.
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid | PK |
+| created_at | timestamptz | |
+| name | text | |
+| invite_code | text | unique, 6-char alphanumeric |
+| created_by | uuid | nullable, default `auth.uid()` |
+
+### group_members
+Join table linking users to groups.
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid | PK |
+| created_at | timestamptz | |
+| group_id | uuid | FK → groups |
+| user_id | uuid | default `auth.uid()` |
+| role | text | default `'member'` |
+
+### events
+Group events with date/time and location.
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid | PK |
+| created_at | timestamptz | |
+| group_id | uuid | FK → groups |
+| creator_id | uuid | default `auth.uid()` |
+| title | text | |
+| description | text | nullable |
+| event_date | date | |
+| start_time | time | |
+| end_time | time | nullable |
+| location | text | nullable |
+
+### event_responses
+User RSVP responses to events.
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid | PK |
+| created_at | timestamptz | |
+| event_id | uuid | FK → events |
+| user_id | uuid | default `auth.uid()` |
+| response | text | default `'pending'` |
+| notified_at | timestamptz | nullable |
+| responded_at | timestamptz | nullable |
+
+### Key Relationships
+- `schedules.user_id` → auth.users (personal schedules)
+- `groups.created_by` → auth.users (group owner)
+- `group_members` → joins users to groups (many-to-many)
+- `events.group_id` → groups (events belong to a group)
+- `event_responses.event_id` → events (RSVPs per event)
+
 ## Environment Variables
 
 Requires Supabase credentials (not committed):
