@@ -98,6 +98,7 @@ export default function GroupCalendar() {
   const [members, setMembers] = useState([])
   const [profiles, setProfiles] = useState({})
   const [events, setEvents] = useState([])
+  const [allResponses, setAllResponses] = useState({})
   const [myResponses, setMyResponses] = useState({})
   const [currentUser, setCurrentUser] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -106,6 +107,7 @@ export default function GroupCalendar() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [visibleUsers, setVisibleUsers] = useState({}) // userId -> boolean
   const [removingUser, setRemovingUser] = useState(null)
+  const [editingEvent, setEditingEvent] = useState(null)
 
   // Event form state
   const [eventTitle, setEventTitle] = useState('')
@@ -180,6 +182,7 @@ export default function GroupCalendar() {
         setEvents(eventData)
         const eventIds = eventData.map(e => e.id)
         if (eventIds.length > 0) {
+          // Fetch current user's responses
           const { data: responses } = await supabase
             .from('event_responses')
             .select('*')
@@ -190,6 +193,21 @@ export default function GroupCalendar() {
             const responseMap = {}
             responses.forEach(r => { responseMap[r.event_id] = r.response })
             setMyResponses(responseMap)
+          }
+
+          // Fetch all responses for all events (for profile pictures)
+          const { data: allResponseData } = await supabase
+            .from('event_responses')
+            .select('*')
+            .in('event_id', eventIds)
+
+          if (allResponseData) {
+            const grouped = {}
+            allResponseData.forEach(r => {
+              if (!grouped[r.event_id]) grouped[r.event_id] = []
+              grouped[r.event_id].push(r)
+            })
+            setAllResponses(grouped)
           }
         }
       }
@@ -266,33 +284,66 @@ export default function GroupCalendar() {
     }
   }
 
+  const resetEventForm = () => {
+    setEventTitle('')
+    setEventDescription('')
+    setEventDate('')
+    setEventStartTime('12:00')
+    setEventEndTime('13:00')
+    setEventLocation('')
+    setEditingEvent(null)
+  }
+
+  const openEditEvent = (event) => {
+    setEditingEvent(event)
+    setEventTitle(event.title)
+    setEventDescription(event.description || '')
+    setEventDate(event.event_date)
+    setEventStartTime(event.start_time?.slice(0, 5) || '12:00')
+    setEventEndTime(event.end_time?.slice(0, 5) || '13:00')
+    setEventLocation(event.location || '')
+    setShowEventForm(true)
+  }
+
   const handleCreateEvent = async (e) => {
     e.preventDefault()
     try {
-      const { error } = await supabase.from('events').insert({
-        group_id: params.id,
-        creator_id: currentUser.id,
-        title: eventTitle,
-        description: eventDescription || null,
-        event_date: eventDate,
-        start_time: eventStartTime,
-        end_time: eventEndTime || null,
-        location: eventLocation || null,
-      })
+      if (editingEvent) {
+        const { error } = await supabase
+          .from('events')
+          .update({
+            title: eventTitle,
+            description: eventDescription || null,
+            event_date: eventDate,
+            start_time: eventStartTime,
+            end_time: eventEndTime || null,
+            location: eventLocation || null,
+          })
+          .eq('id', editingEvent.id)
 
-      if (error) throw error
+        if (error) throw error
+        toast.success('Event updated!')
+      } else {
+        const { error } = await supabase.from('events').insert({
+          group_id: params.id,
+          creator_id: currentUser.id,
+          title: eventTitle,
+          description: eventDescription || null,
+          event_date: eventDate,
+          start_time: eventStartTime,
+          end_time: eventEndTime || null,
+          location: eventLocation || null,
+        })
 
-      toast.success('Event created!')
-      setEventTitle('')
-      setEventDescription('')
-      setEventDate('')
-      setEventStartTime('12:00')
-      setEventEndTime('13:00')
-      setEventLocation('')
+        if (error) throw error
+        toast.success('Event created!')
+      }
+
+      resetEventForm()
       setShowEventForm(false)
       fetchData()
     } catch (error) {
-      toast.error('Error creating event')
+      toast.error(editingEvent ? 'Error updating event' : 'Error creating event')
       console.error(error)
     }
   }
@@ -324,6 +375,14 @@ export default function GroupCalendar() {
       }
 
       setMyResponses(prev => ({ ...prev, [eventId]: response }))
+
+      // Update allResponses locally
+      setAllResponses(prev => {
+        const eventResponses = (prev[eventId] || []).filter(r => r.user_id !== currentUser.id)
+        eventResponses.push({ event_id: eventId, user_id: currentUser.id, response, responded_at: new Date().toISOString() })
+        return { ...prev, [eventId]: eventResponses }
+      })
+
       toast.success(`RSVP: ${response}`)
     } catch (error) {
       toast.error('Error updating RSVP')
@@ -350,6 +409,31 @@ export default function GroupCalendar() {
 
   // Filter schedules by visible users
   const filteredSchedules = schedules.filter(s => visibleUsers[s.user_id] !== false)
+
+  // Convert events to schedule blocks for the grid view
+  // Events are mapped to their day_of_week based on event_date
+  const getEventBlocksForDay = (dayIndex) => {
+    return events
+      .filter(e => {
+        if (!e.event_date || !e.start_time) return false
+        const date = new Date(e.event_date + 'T00:00:00')
+        // getDay() returns 0=Sun, we need 0=Mon
+        const dow = (date.getDay() + 6) % 7
+        return dow === dayIndex
+      })
+      .map(e => ({
+        id: `event-${e.id}`,
+        eventId: e.id,
+        isEvent: true,
+        class_name: e.title,
+        start_time: e.start_time,
+        end_time: e.end_time || e.start_time,
+        startDec: timeToDecimal(e.start_time),
+        endDec: timeToDecimal(e.end_time || e.start_time) || timeToDecimal(e.start_time) + 1,
+        user_id: e.creator_id,
+        event: e,
+      }))
+  }
 
   if (loading) {
     return (
@@ -454,26 +538,36 @@ export default function GroupCalendar() {
                     </div>
                   ))}
 
-                  {/* Schedule blocks with overlap handling */}
+                  {/* Schedule blocks + Event blocks with overlap handling */}
                   {daysOfWeek.map((_, dayIndex) => {
-                    const dayBlocks = filteredSchedules
+                    const dayScheduleBlocks = filteredSchedules
                       .filter(s => Number(s.day_of_week) === dayIndex)
                       .map(s => ({
                         ...s,
                         startDec: timeToDecimal(s.start_time),
                         endDec: timeToDecimal(s.end_time),
+                        isEvent: false,
                       }))
 
-                    const layoutBlocks = computeOverlapLayout(dayBlocks)
+                    const dayEventBlocks = getEventBlocksForDay(dayIndex)
+                    const allBlocks = [...dayScheduleBlocks, ...dayEventBlocks]
+
+                    const layoutBlocks = computeOverlapLayout(allBlocks)
 
                     return layoutBlocks.map(block => {
-                      const colorIdx = getUserColorIndex(block.user_id)
-                      const color = memberColors[colorIdx]
+                      const isEvent = block.isEvent
+                      let color
+                      if (isEvent) {
+                        color = { bg: 'rgba(99,102,241,0.18)', border: '#6366f1', text: '#818cf8' }
+                      } else {
+                        const colorIdx = getUserColorIndex(block.user_id)
+                        color = memberColors[colorIdx]
+                      }
 
                       const topOffset = (block.startDec - 6) * 56
-                      const height = (block.endDec - block.startDec) * 56
+                      const height = Math.max((block.endDec - block.startDec) * 56, 28)
 
-                      if (topOffset < 0 || height <= 0) return null
+                      if (topOffset < 0) return null
 
                       const colLeft = ((dayIndex + 1) / 8) * 100
                       const colWidth = (1 / 8) * 100
@@ -483,7 +577,7 @@ export default function GroupCalendar() {
                       return (
                         <div
                           key={block.id}
-                          className="absolute rounded-md px-1.5 py-1 overflow-hidden"
+                          className={`absolute rounded-md px-1.5 py-1 overflow-hidden ${isEvent ? 'cursor-pointer' : ''}`}
                           style={{
                             top: `${topOffset}px`,
                             height: `${height}px`,
@@ -491,16 +585,31 @@ export default function GroupCalendar() {
                             width: `${slotWidth}%`,
                             backgroundColor: color.bg,
                             borderLeft: `3px solid ${color.border}`,
-                            zIndex: 1,
+                            opacity: isEvent ? 0.7 : 1,
+                            zIndex: isEvent ? 2 : 1,
+                            borderStyle: isEvent ? 'dashed' : undefined,
+                            borderWidth: isEvent ? '1px' : undefined,
+                            borderColor: isEvent ? color.border : undefined,
+                            borderLeftWidth: '3px',
+                            borderLeftStyle: 'solid',
                           }}
-                          title={`${block.class_name} — ${getUserLabel(block.user_id)}\n${formatTime12(block.start_time)} - ${formatTime12(block.end_time)}`}
+                          title={isEvent
+                            ? `Event: ${block.class_name}\n${formatTime12(block.start_time)}${block.end_time ? ` - ${formatTime12(block.end_time)}` : ''}\nClick to view`
+                            : `${block.class_name} — ${getUserLabel(block.user_id)}\n${formatTime12(block.start_time)} - ${formatTime12(block.end_time)}`
+                          }
+                          onClick={isEvent ? () => { setActiveTab('events') } : undefined}
                         >
                           <p className="text-xs font-semibold truncate leading-tight" style={{ color: color.text }}>
+                            {isEvent && (
+                              <svg className="w-3 h-3 inline-block mr-0.5 -mt-0.5" fill="none" stroke={color.text} viewBox="0 0 24 24" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                              </svg>
+                            )}
                             {block.class_name}
                           </p>
                           {height > 30 && (
                             <p className="text-xs truncate leading-tight" style={{ color: color.text, opacity: 0.7 }}>
-                              {getUserLabel(block.user_id)}
+                              {isEvent ? formatTime12(block.start_time) : getUserLabel(block.user_id)}
                             </p>
                           )}
                         </div>
@@ -518,20 +627,29 @@ export default function GroupCalendar() {
           <div>
             <div className="flex justify-end mb-4">
               <button
-                onClick={() => setShowEventForm(!showEventForm)}
+                onClick={() => {
+                  if (showEventForm && !editingEvent) {
+                    setShowEventForm(false)
+                  } else {
+                    resetEventForm()
+                    setShowEventForm(!showEventForm)
+                  }
+                }}
                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  showEventForm
+                  showEventForm && !editingEvent
                     ? 'bg-card border border-border text-muted'
                     : 'bg-accent text-white hover:bg-accent-hover'
                 }`}
               >
-                {showEventForm ? 'Cancel' : '+ Create Event'}
+                {showEventForm && !editingEvent ? 'Cancel' : '+ Create Event'}
               </button>
             </div>
 
             {showEventForm && (
               <div className="bg-card border border-border rounded-xl p-6 mb-6">
-                <h3 className="text-lg font-semibold text-foreground mb-4">Create Event</h3>
+                <h3 className="text-lg font-semibold text-foreground mb-4">
+                  {editingEvent ? 'Edit Event' : 'Create Event'}
+                </h3>
                 <form onSubmit={handleCreateEvent} className="space-y-4">
                   <div>
                     <label className="block text-sm font-medium text-muted mb-1.5">Title</label>
@@ -595,12 +713,23 @@ export default function GroupCalendar() {
                       placeholder="e.g. Library Room 204"
                     />
                   </div>
-                  <button
-                    type="submit"
-                    className="w-full px-4 py-2.5 bg-accent text-white rounded-lg text-sm font-medium hover:bg-accent-hover transition-colors"
-                  >
-                    Create Event
-                  </button>
+                  <div className="flex gap-3">
+                    <button
+                      type="submit"
+                      className="flex-1 px-4 py-2.5 bg-accent text-white rounded-lg text-sm font-medium hover:bg-accent-hover transition-colors"
+                    >
+                      {editingEvent ? 'Save Changes' : 'Create Event'}
+                    </button>
+                    {editingEvent && (
+                      <button
+                        type="button"
+                        onClick={() => { resetEventForm(); setShowEventForm(false) }}
+                        className="px-4 py-2.5 bg-card border border-border text-muted rounded-lg text-sm font-medium hover:text-foreground transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    )}
+                  </div>
                 </form>
               </div>
             )}
@@ -617,12 +746,27 @@ export default function GroupCalendar() {
                 {events.map(event => {
                   const isCreator = event.creator_id === currentUser?.id
                   const myResponse = myResponses[event.id]
+                  const eventResponses = allResponses[event.id] || []
+
+                  // Group responses by type
+                  const goingResponses = eventResponses.filter(r => r.response === 'going')
+                  const maybeResponses = eventResponses.filter(r => r.response === 'maybe')
+                  const notGoingResponses = eventResponses.filter(r => r.response === 'not_going')
 
                   return (
-                    <div key={event.id} className="bg-card border border-border rounded-xl p-5">
+                    <div
+                      key={event.id}
+                      className="bg-card border border-border rounded-xl p-5 cursor-pointer hover:border-border-light transition-colors"
+                      onClick={() => { if (isCreator) openEditEvent(event) }}
+                    >
                       <div className="flex justify-between items-start">
                         <div className="flex-1 min-w-0">
-                          <h3 className="text-lg font-semibold text-foreground">{event.title}</h3>
+                          <h3 className="text-lg font-semibold text-foreground">
+                            {event.title}
+                            {isCreator && (
+                              <span className="ml-2 text-xs text-muted font-normal">(click to edit)</span>
+                            )}
+                          </h3>
                           {event.description && (
                             <p className="text-sm text-muted mt-1">{event.description}</p>
                           )}
@@ -653,7 +797,7 @@ export default function GroupCalendar() {
                         </div>
                         {isCreator && (
                           <button
-                            onClick={() => handleDeleteEvent(event.id)}
+                            onClick={(e) => { e.stopPropagation(); handleDeleteEvent(event.id) }}
                             className="p-1.5 text-muted hover:text-danger transition-colors rounded-md hover:bg-danger/10"
                             title="Delete event"
                           >
@@ -664,25 +808,66 @@ export default function GroupCalendar() {
                         )}
                       </div>
 
-                      <div className="flex items-center gap-2 mt-4 pt-4 border-t border-border">
-                        <span className="text-xs text-muted mr-1">RSVP:</span>
-                        {[
-                          { value: 'going', label: 'Going', activeClass: 'bg-success/20 text-success border-success/30' },
-                          { value: 'maybe', label: 'Maybe', activeClass: 'bg-warning/20 text-warning border-warning/30' },
-                          { value: 'not_going', label: "Can't go", activeClass: 'bg-danger/20 text-danger border-danger/30' },
-                        ].map(option => (
-                          <button
-                            key={option.value}
-                            onClick={() => handleRSVP(event.id, option.value)}
-                            className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
-                              myResponse === option.value
-                                ? option.activeClass
-                                : 'border-border text-muted hover:border-border-light hover:text-foreground'
-                            }`}
-                          >
-                            {option.label}
-                          </button>
-                        ))}
+                      {/* RSVP section with profile pictures */}
+                      <div className="mt-4 pt-4 border-t border-border" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center gap-2 mb-3">
+                          <span className="text-xs text-muted mr-1">RSVP:</span>
+                          {[
+                            { value: 'going', label: 'Going', activeClass: 'bg-success/20 text-success border-success/30' },
+                            { value: 'maybe', label: 'Maybe', activeClass: 'bg-warning/20 text-warning border-warning/30' },
+                            { value: 'not_going', label: "Can't go", activeClass: 'bg-danger/20 text-danger border-danger/30' },
+                          ].map(option => (
+                            <button
+                              key={option.value}
+                              onClick={() => handleRSVP(event.id, option.value)}
+                              className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
+                                myResponse === option.value
+                                  ? option.activeClass
+                                  : 'border-border text-muted hover:border-border-light hover:text-foreground'
+                              }`}
+                            >
+                              {option.label}
+                            </button>
+                          ))}
+                        </div>
+
+                        {/* Response avatars grouped by type */}
+                        {(goingResponses.length > 0 || maybeResponses.length > 0 || notGoingResponses.length > 0) && (
+                          <div className="flex flex-wrap gap-4 mt-2">
+                            {[
+                              { responses: goingResponses, label: 'Going', color: 'text-success', borderColor: '#22c55e' },
+                              { responses: maybeResponses, label: 'Maybe', color: 'text-warning', borderColor: '#f59e0b' },
+                              { responses: notGoingResponses, label: "Can't go", color: 'text-danger', borderColor: '#ef4444' },
+                            ].filter(g => g.responses.length > 0).map(group => (
+                              <div key={group.label} className="flex items-center gap-1.5">
+                                <span className={`text-xs ${group.color} font-medium`}>{group.label}:</span>
+                                <div className="flex -space-x-1.5">
+                                  {group.responses.map(r => {
+                                    const profile = profiles[r.user_id]
+                                    return (
+                                      <div
+                                        key={r.user_id}
+                                        className="w-6 h-6 rounded-full flex items-center justify-center overflow-hidden border-2 flex-shrink-0"
+                                        style={{ borderColor: group.borderColor }}
+                                        title={getUserLabel(r.user_id)}
+                                      >
+                                        {profile?.avatar_url ? (
+                                          <img src={profile.avatar_url} alt="" className="w-full h-full object-cover" />
+                                        ) : (
+                                          <div className="w-full h-full flex items-center justify-center bg-card-hover">
+                                            <span className="text-xs font-semibold text-muted">
+                                              {getUserLabel(r.user_id)[0].toUpperCase()}
+                                            </span>
+                                          </div>
+                                        )}
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
                   )

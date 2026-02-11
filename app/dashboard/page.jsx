@@ -39,6 +39,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [viewMode, setViewMode] = useState('week') // 'week' or 'list'
+  const [editingSchedule, setEditingSchedule] = useState(null)
 
   // Form state
   const [className, setClassName] = useState('')
@@ -73,31 +74,62 @@ export default function Dashboard() {
     }
   }
 
+  const resetForm = () => {
+    setClassName('')
+    setDayOfWeek('0')
+    setStartTime('09:00')
+    setEndTime('10:00')
+    setSelectedColor(colorOptions[0].value)
+    setEditingSchedule(null)
+  }
+
+  const openEditForm = (schedule) => {
+    setEditingSchedule(schedule)
+    setClassName(schedule.class_name)
+    setDayOfWeek(String(schedule.day_of_week))
+    setStartTime(schedule.start_time?.slice(0, 5) || '09:00')
+    setEndTime(schedule.end_time?.slice(0, 5) || '10:00')
+    setSelectedColor(schedule.color || colorOptions[0].value)
+    setShowForm(true)
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     try {
-      const { error } = await supabase
-        .from('schedules')
-        .insert({
-          class_name: className,
-          day_of_week: parseInt(dayOfWeek),
-          start_time: startTime,
-          end_time: endTime,
-          color: selectedColor,
-        })
+      if (editingSchedule) {
+        const { error } = await supabase
+          .from('schedules')
+          .update({
+            class_name: className,
+            day_of_week: parseInt(dayOfWeek),
+            start_time: startTime,
+            end_time: endTime,
+            color: selectedColor,
+          })
+          .eq('id', editingSchedule.id)
 
-      if (error) throw error
+        if (error) throw error
+        toast.success('Class updated!')
+      } else {
+        const { error } = await supabase
+          .from('schedules')
+          .insert({
+            class_name: className,
+            day_of_week: parseInt(dayOfWeek),
+            start_time: startTime,
+            end_time: endTime,
+            color: selectedColor,
+          })
 
-      toast.success('Class added!')
-      setClassName('')
-      setDayOfWeek('0')
-      setStartTime('09:00')
-      setEndTime('10:00')
-      setSelectedColor(colorOptions[0].value)
+        if (error) throw error
+        toast.success('Class added!')
+      }
+
+      resetForm()
       setShowForm(false)
       fetchSchedules()
     } catch (error) {
-      toast.error('Error adding class')
+      toast.error(editingSchedule ? 'Error updating class' : 'Error adding class')
       console.error(error)
     }
   }
@@ -121,10 +153,6 @@ export default function Dashboard() {
 
   const getColorInfo = (colorValue) => {
     return colorOptions.find(c => c.value === colorValue) || colorOptions[0]
-  }
-
-  const getSchedulesForDay = (dayIndex) => {
-    return schedules.filter(s => s.day_of_week === dayIndex)
   }
 
   if (loading) {
@@ -167,22 +195,31 @@ export default function Dashboard() {
             </button>
           </div>
           <button
-            onClick={() => setShowForm(!showForm)}
+            onClick={() => {
+              if (showForm && !editingSchedule) {
+                setShowForm(false)
+              } else {
+                resetForm()
+                setShowForm(!showForm)
+              }
+            }}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-              showForm
+              showForm && !editingSchedule
                 ? 'bg-card border border-border text-muted hover:text-foreground'
                 : 'bg-accent text-white hover:bg-accent-hover'
             }`}
           >
-            {showForm ? 'Cancel' : '+ Add Class'}
+            {showForm && !editingSchedule ? 'Cancel' : '+ Add Class'}
           </button>
         </div>
       </div>
 
-      {/* Add Class Form */}
+      {/* Add/Edit Class Form */}
       {showForm && (
         <div className="bg-card border border-border rounded-xl p-6 mb-6">
-          <h3 className="text-lg font-semibold text-foreground mb-4">Add New Class</h3>
+          <h3 className="text-lg font-semibold text-foreground mb-4">
+            {editingSchedule ? 'Edit Class' : 'Add New Class'}
+          </h3>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-muted mb-1.5">Class Name</label>
@@ -256,12 +293,23 @@ export default function Dashboard() {
               </div>
             </div>
 
-            <button
-              type="submit"
-              className="w-full px-4 py-2.5 bg-accent text-white rounded-lg text-sm font-medium hover:bg-accent-hover transition-colors"
-            >
-              Add Class
-            </button>
+            <div className="flex gap-3">
+              <button
+                type="submit"
+                className="flex-1 px-4 py-2.5 bg-accent text-white rounded-lg text-sm font-medium hover:bg-accent-hover transition-colors"
+              >
+                {editingSchedule ? 'Save Changes' : 'Add Class'}
+              </button>
+              {editingSchedule && (
+                <button
+                  type="button"
+                  onClick={() => { resetForm(); setShowForm(false) }}
+                  className="px-4 py-2.5 bg-card border border-border text-muted rounded-lg text-sm font-medium hover:text-foreground transition-colors"
+                >
+                  Cancel
+                </button>
+              )}
+            </div>
           </form>
         </div>
       )}
@@ -322,7 +370,8 @@ export default function Dashboard() {
                         backgroundColor: colorInfo.bg,
                         borderLeft: `3px solid ${colorInfo.border}`,
                       }}
-                      title={`${schedule.class_name}\n${formatTime12(schedule.start_time)} - ${formatTime12(schedule.end_time)}`}
+                      title={`${schedule.class_name}\n${formatTime12(schedule.start_time)} - ${formatTime12(schedule.end_time)}\nClick to edit`}
+                      onClick={() => openEditForm(schedule)}
                     >
                       <p className="text-xs font-semibold truncate" style={{ color: colorInfo.border }}>
                         {schedule.class_name}
@@ -361,7 +410,11 @@ export default function Dashboard() {
               {schedules.map((schedule) => {
                 const colorInfo = getColorInfo(schedule.color)
                 return (
-                  <div key={schedule.id} className="p-4 flex justify-between items-center hover:bg-card-hover transition-colors">
+                  <div
+                    key={schedule.id}
+                    className="p-4 flex justify-between items-center hover:bg-card-hover transition-colors cursor-pointer"
+                    onClick={() => openEditForm(schedule)}
+                  >
                     <div className="flex items-center gap-3">
                       <div
                         className="w-1 h-10 rounded-full"
@@ -375,7 +428,7 @@ export default function Dashboard() {
                       </div>
                     </div>
                     <button
-                      onClick={() => handleDelete(schedule.id)}
+                      onClick={(e) => { e.stopPropagation(); handleDelete(schedule.id) }}
                       className="px-3 py-1.5 text-sm text-danger hover:bg-danger/10 rounded-lg transition-colors"
                     >
                       Delete
