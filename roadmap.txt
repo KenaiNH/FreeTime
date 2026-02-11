@@ -3,4 +3,10 @@
 • User Customization (Prio2)
 	○ Username (Prio2.1)
 	○ Pfp (Prio2.2)
-		
+• Events System (Prio2)
+	○ Create/edit/delete group events
+	○ Event RSVP interface (accept/decline)
+	○ Event list & calendar view per group
+	○ Auto-notify group members when a new event is created
+		- Prompt members without a response to set their RSVP status
+		- Track notification state via notified_at / responded_at
