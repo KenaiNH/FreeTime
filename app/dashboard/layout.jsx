@@ -18,8 +18,12 @@ export default function DashboardLayout({ children }) {
   const [showProfileEdit, setShowProfileEdit] = useState(false)
   const [editName, setEditName] = useState('')
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [showFeedback, setShowFeedback] = useState(false)
+  const [feedbackSubject, setFeedbackSubject] = useState('Suggestion')
+  const [feedbackDescription, setFeedbackDescription] = useState('')
   const fileInputRef = useRef(null)
   const menuRef = useRef(null)
+  const feedbackRef = useRef(null)
 
   useEffect(() => {
     const checkUser = async () => {
@@ -61,6 +65,29 @@ export default function DashboardLayout({ children }) {
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
+
+  // Close feedback on outside click
+  useEffect(() => {
+    const handleFeedbackOutside = (e) => {
+      if (feedbackRef.current && !feedbackRef.current.contains(e.target)) {
+        setShowFeedback(false)
+      }
+    }
+    if (showFeedback) {
+      document.addEventListener('mousedown', handleFeedbackOutside)
+      return () => document.removeEventListener('mousedown', handleFeedbackOutside)
+    }
+  }, [showFeedback])
+
+  const handleSendFeedback = () => {
+    const subject = encodeURIComponent(feedbackSubject)
+    const body = encodeURIComponent(feedbackDescription)
+    window.location.href = `mailto:kprod879@gmail.com?subject=${subject}&body=${body}`
+    setShowFeedback(false)
+    setFeedbackSubject('Suggestion')
+    setFeedbackDescription('')
+    toast.success('Opening email client...')
+  }
 
   const handleSignOut = async () => {
     await supabase.auth.signOut()
@@ -319,6 +346,62 @@ export default function DashboardLayout({ children }) {
             {children}
           </div>
         </main>
+      </div>
+
+      {/* Feedback button — bottom right */}
+      <div className="fixed bottom-4 right-4 z-50">
+        {showFeedback && (
+          <div ref={feedbackRef} className="absolute bottom-10 right-0 w-72 bg-card border border-border rounded-xl shadow-2xl p-4 mb-2">
+            <h4 className="text-sm font-semibold text-foreground mb-3">Send Feedback</h4>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs text-muted mb-1">Subject</label>
+                <select
+                  value={feedbackSubject}
+                  onChange={(e) => setFeedbackSubject(e.target.value)}
+                  className="w-full px-2.5 py-1.5 bg-background border border-border rounded-md text-sm text-foreground focus:outline-none focus:border-accent"
+                >
+                  <option value="Suggestion">Suggestion</option>
+                  <option value="Bug Report">Bug Report</option>
+                  <option value="Feature Request">Feature Request</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-muted mb-1">Description</label>
+                <textarea
+                  value={feedbackDescription}
+                  onChange={(e) => setFeedbackDescription(e.target.value)}
+                  className="w-full px-2.5 py-1.5 bg-background border border-border rounded-md text-sm text-foreground focus:outline-none focus:border-accent resize-none"
+                  rows={3}
+                  placeholder="Describe your suggestion or issue..."
+                />
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleSendFeedback}
+                  disabled={!feedbackDescription.trim()}
+                  className="flex-1 px-3 py-1.5 bg-accent text-white text-sm rounded-md hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  Send
+                </button>
+                <button
+                  onClick={() => setShowFeedback(false)}
+                  className="px-3 py-1.5 bg-background border border-border text-muted text-sm rounded-md hover:text-foreground transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        <button
+          onClick={() => setShowFeedback(!showFeedback)}
+          className="w-8 h-8 rounded-full bg-black border border-border-light text-white text-sm font-bold flex items-center justify-center hover:bg-card-hover transition-colors shadow-lg"
+          title="Send feedback or report an issue"
+        >
+          !
+        </button>
       </div>
     </div>
   )
