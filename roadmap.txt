@@ -1,0 +1,6 @@
+• Add Remove Group (Prio1)
+• UI Overhaul (Prio1)
+• User Customization (Prio2)
+	○ Username (Prio2.1)
+	○ Pfp (Prio2.2)
+		
