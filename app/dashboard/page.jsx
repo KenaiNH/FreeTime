@@ -22,22 +22,28 @@ export default function Dashboard() {
   }, [])
 
   const fetchSchedules = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('schedules')
-        .select('*')
-        .order('day_of_week', { ascending: true })
-        .order('start_time', { ascending: true })
+      try {
 
-      if (error) throw error
-      setSchedules(data || [])
-    } catch (error) {
-      toast.error('Error loading schedules')
-      console.error(error)
-    } finally {
-      setLoading(false)
+        const { data: { user } } = await supabase.auth.getUser()
+        
+        if (!user) return;
+
+        const { data, error } = await supabase
+          .from('schedules')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('day_of_week', { ascending: true })
+          .order('start_time', { ascending: true })
+
+        if (error) throw error
+        setSchedules(data || [])
+      } catch (error) {
+        toast.error('Error loading schedules')
+        console.error(error)
+      } finally {
+        setLoading(false)
+      }
     }
-  }
 
   const handleSubmit = async (e) => {
     e.preventDefault()

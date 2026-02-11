@@ -1,109 +1,66 @@
 'use client'
-
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
-import { useParams } from 'next/navigation'
-import toast from 'react-hot-toast'
+import { useParams } from 'next/navigation' // To get the Group ID from URL
 
-export default function GroupSchedule() {
-  const params = useParams()
-  const groupId = params.id  // ← This gets the ID from the URL
-
-  const [group, setGroup] = useState(null)
-  const [members, setMembers] = useState([])
+export default function GroupCalendar() {
+  const params = useParams() // Get group ID from URL
   const [schedules, setSchedules] = useState([])
-  const [loading, setLoading] = useState(true)
-
-  const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+  const [members, setMembers] = useState([])
 
   useEffect(() => {
     fetchGroupData()
-  }, [groupId])
+  }, [])
 
   const fetchGroupData = async () => {
-    try {
-      // Fetch group info
-      const { data: groupData, error: groupError } = await supabase
-        .from('groups')
-        .select('*')
-        .eq('id', groupId)
-        .single()
+    // 1. Get all members of this specific group
+    const { data: memberData } = await supabase
+      .from('group_members')
+      .select('user_id')
+      .eq('group_id', params.id)
+    
+    if (!memberData || memberData.length === 0) return
 
-      if (groupError) throw groupError
-      setGroup(groupData)
+    // Extract just the IDs (e.g., ['user_123', 'user_456'])
+    const memberIds = memberData.map(m => m.user_id)
+    setMembers(memberIds)
 
-      // Fetch members
-      const { data: membersData, error: membersError } = await supabase
-        .from('group_members')
-        .select('user_id')
-        .eq('group_id', groupId)
+    // 2. Fetch schedules for ANY of these users
+    const { data: scheduleData, error } = await supabase
+      .from('schedules')
+      .select('*')
+      .in('user_id', memberIds) // 👈 KEY: Fetch if user is IN this list
+      .order('day_of_week')
+      .order('start_time')
 
-      if (membersError) throw membersError
-
-      const userIds = membersData.map(m => m.user_id)
-
-      // Fetch schedules for all members
-      const { data: schedulesData, error: schedulesError } = await supabase
-        .from('schedules')
-        .select('*')
-        .in('user_id', userIds)
-        .order('day_of_week', { ascending: true })
-        .order('start_time', { ascending: true })
-
-      if (schedulesError) throw schedulesError
-      setSchedules(schedulesData)
-
-      setMembers(membersData)
-    } catch (error) {
-      toast.error('Error loading group schedule')
-      console.error(error)
-    } finally {
-      setLoading(false)
-    }
+    if (scheduleData) setSchedules(scheduleData)
   }
 
-  if (loading) {
-    return <p>Loading group schedule...</p>
+  // Helper to color-code users so you can tell them apart
+  const getUserColor = (userId) => {
+    // Simple hash to give each user a consistent color
+    const colors = ['bg-red-100', 'bg-blue-100', 'bg-green-100', 'bg-yellow-100', 'bg-purple-100']
+    const index = userId.charCodeAt(0) % colors.length
+    return colors[index]
   }
-
-  // Group schedules by day
-  const schedulesByDay = daysOfWeek.map((day, index) => ({
-    day,
-    classes: schedules.filter(s => s.day_of_week === index)
-  }))
 
   return (
-    <div>
-      <div className="mb-6">
-        <h2 className="text-2xl font-bold">{group.name}</h2>
-        <p className="text-gray-600">{members.length} member{members.length !== 1 ? 's' : ''}</p>
-      </div>
-
-      <div className="bg-white rounded-lg shadow overflow-hidden">
-        <div className="divide-y">
-          {schedulesByDay.map(({ day, classes }) => (
-            <div key={day} className="p-4">
-              <h3 className="font-semibold text-lg mb-3">{day}</h3>
-              {classes.length === 0 ? (
-                <p className="text-sm text-gray-500">No classes</p>
-              ) : (
-                <div className="space-y-2">
-                  {classes.map((schedule) => (
-                    <div
-                      key={schedule.id}
-                      className="p-3 bg-blue-50 rounded-md border border-blue-200"
-                    >
-                      <p className="font-medium">{schedule.class_name}</p>
-                      <p className="text-sm text-gray-600">
-                        {schedule.start_time} - {schedule.end_time}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              )}
+    <div className="p-6">
+      <h2 className="text-2xl font-bold mb-6">Group Schedule</h2>
+      
+      <div className="space-y-4">
+        {schedules.map(schedule => (
+          <div key={schedule.id} className={`p-4 rounded-lg border ${getUserColor(schedule.user_id)}`}>
+            <div className="font-bold">{schedule.class_name}</div>
+            <div className="text-sm">
+               {/* Note: You might want to fetch user emails/names to display here instead of IDs */}
+               User: {schedule.user_id.slice(0, 4)}... 
             </div>
-          ))}
-        </div>
+            <div className="text-sm text-gray-600">
+               {schedule.start_time} - {schedule.end_time}
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   )

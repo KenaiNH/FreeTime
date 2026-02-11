@@ -4,12 +4,17 @@ import { Auth } from '@supabase/auth-ui-react'
 import { ThemeSupa } from '@supabase/auth-ui-shared'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react' // 1. Added useState
 
 export default function Login() {
   const router = useRouter()
+  // 2. Create a state to hold the origin URL, default to empty string
+  const [origin, setOrigin] = useState('')
 
   useEffect(() => {
+    // 3. Once mounted in the browser, set the origin safely
+    setOrigin(window.location.origin)
+
     // Check if already logged in
     const checkUser = async () => {
       const { data: { session } } = await supabase.auth.getSession()
@@ -29,6 +34,10 @@ export default function Login() {
     return () => subscription.unsubscribe()
   }, [router])
 
+  // 4. Ensure we don't render the Auth component until we have the origin
+  //    (This prevents the redirect URL from being invalid during hydration)
+  if (!origin) return null
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
       <div className="max-w-md w-full p-8 bg-white rounded-lg shadow-lg">
@@ -37,7 +46,8 @@ export default function Login() {
           supabaseClient={supabase}
           appearance={{ theme: ThemeSupa }}
           providers={['google']}
-          redirectTo={`${window.location.origin}/dashboard`}
+          // 5. Use the safe 'origin' state variable here
+          redirectTo={`${origin}/dashboard`}
         />
       </div>
     </div>
