@@ -221,13 +221,18 @@ export default function GroupCalendar() {
   const handleLeaveGroup = async () => {
     if (!confirm('Are you sure you want to leave this group?')) return
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('group_members')
         .delete()
         .eq('group_id', params.id)
         .eq('user_id', currentUser.id)
+        .select()
 
       if (error) throw error
+      if (!data || data.length === 0) {
+        toast.error('Could not leave group — permission denied')
+        return
+      }
       toast.success('Left the group')
       router.push('/dashboard/groups')
     } catch (error) {
@@ -239,13 +244,19 @@ export default function GroupCalendar() {
   const handleRemoveMember = async (userId) => {
     if (!confirm(`Remove ${getUserLabel(userId)} from this group?`)) return
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('group_members')
         .delete()
         .eq('group_id', params.id)
         .eq('user_id', userId)
+        .select()
 
       if (error) throw error
+      if (!data || data.length === 0) {
+        toast.error('Could not remove member — permission denied')
+        setRemovingUser(null)
+        return
+      }
       toast.success(`${getUserLabel(userId)} removed`)
       setRemovingUser(null)
       fetchData()
@@ -260,6 +271,7 @@ export default function GroupCalendar() {
     try {
       const { error } = await supabase.from('events').insert({
         group_id: params.id,
+        creator_id: currentUser.id,
         title: eventTitle,
         description: eventDescription || null,
         event_date: eventDate,
