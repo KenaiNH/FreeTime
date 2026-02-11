@@ -10,7 +10,7 @@ export default function Home() {
   useEffect(() => {
     const checkUser = async () => {
       const { data: { session } } = await supabase.auth.getSession()
-      
+
       if (session) {
         router.push('/dashboard')
       } else {
@@ -22,8 +22,11 @@ export default function Home() {
   }, [router])
 
   return (
-    <div className="min-h-screen flex items-center justify-center">
-      <p>Loading...</p>
+    <div className="min-h-screen flex items-center justify-center bg-background">
+      <div className="flex flex-col items-center gap-3">
+        <div className="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+        <p className="text-muted text-sm">Loading...</p>
+      </div>
     </div>
   )
 }

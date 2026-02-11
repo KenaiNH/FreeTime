@@ -1,13 +1,13 @@
 import './globals.css'
 
 export const metadata = {
-  title: 'Calendar App',
+  title: 'FreeTime',
   description: 'Collaborative class scheduling',
 }
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en">
+    <html lang="en" className="dark">
       <body>{children}</body>
     </html>
   )
