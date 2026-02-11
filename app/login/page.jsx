@@ -4,18 +4,15 @@ import { Auth } from '@supabase/auth-ui-react'
 import { ThemeSupa } from '@supabase/auth-ui-shared'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
-import { useEffect, useState } from 'react' // 1. Added useState
+import { useEffect, useState } from 'react'
 
 export default function Login() {
   const router = useRouter()
-  // 2. Create a state to hold the origin URL, default to empty string
   const [origin, setOrigin] = useState('')
 
   useEffect(() => {
-    // 3. Once mounted in the browser, set the origin safely
     setOrigin(window.location.origin)
 
-    // Check if already logged in
     const checkUser = async () => {
       const { data: { session } } = await supabase.auth.getSession()
       if (session) {
@@ -24,7 +21,6 @@ export default function Login() {
     }
     checkUser()
 
-    // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_IN') {
         router.push('/dashboard')
@@ -34,21 +30,59 @@ export default function Login() {
     return () => subscription.unsubscribe()
   }, [router])
 
-  // 4. Ensure we don't render the Auth component until we have the origin
-  //    (This prevents the redirect URL from being invalid during hydration)
   if (!origin) return null
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <div className="max-w-md w-full p-8 bg-white rounded-lg shadow-lg">
-        <h1 className="text-3xl font-bold text-center mb-8">Calendar App</h1>
-        <Auth
-          supabaseClient={supabase}
-          appearance={{ theme: ThemeSupa }}
-          providers={['google']}
-          // 5. Use the safe 'origin' state variable here
-          redirectTo={`${origin}/dashboard`}
-        />
+    <div className="min-h-screen flex items-center justify-center bg-background px-4">
+      <div className="max-w-md w-full">
+        {/* Logo */}
+        <div className="text-center mb-8">
+          <h1 className="text-3xl font-bold text-foreground">FreeTime</h1>
+          <p className="text-sm text-muted mt-2">Collaborative class scheduling</p>
+        </div>
+
+        {/* Auth card */}
+        <div className="bg-card border border-border rounded-xl p-8">
+          <Auth
+            supabaseClient={supabase}
+            appearance={{
+              theme: ThemeSupa,
+              variables: {
+                default: {
+                  colors: {
+                    brand: '#6366f1',
+                    brandAccent: '#818cf8',
+                    inputBackground: '#0a0a0f',
+                    inputText: '#e4e4e7',
+                    inputBorder: '#27272a',
+                    inputBorderFocus: '#6366f1',
+                    inputBorderHover: '#3f3f46',
+                    inputPlaceholder: '#71717a',
+                    messageText: '#e4e4e7',
+                    anchorTextColor: '#818cf8',
+                    dividerBackground: '#27272a',
+                  },
+                  borderWidths: {
+                    buttonBorderWidth: '0px',
+                    inputBorderWidth: '1px',
+                  },
+                  radii: {
+                    borderRadiusButton: '8px',
+                    buttonBorderRadius: '8px',
+                    inputBorderRadius: '8px',
+                  },
+                },
+              },
+              className: {
+                container: 'auth-container',
+                button: 'auth-button',
+                input: 'auth-input',
+              },
+            }}
+            providers={['google']}
+            redirectTo={`${origin}/dashboard`}
+          />
+        </div>
       </div>
     </div>
   )

@@ -10,7 +10,7 @@ export default function Groups() {
   const [loading, setLoading] = useState(true)
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [showJoinForm, setShowJoinForm] = useState(false)
-  
+
   // Form state
   const [groupName, setGroupName] = useState('')
   const [inviteCode, setInviteCode] = useState('')
@@ -38,7 +38,20 @@ export default function Groups() {
 
       if (error) throw error
 
-      setGroups(data.map(item => item.groups))
+      const groupsList = data.map(item => item.groups)
+
+      // Fetch member counts for each group
+      const groupsWithCounts = await Promise.all(
+        groupsList.map(async (group) => {
+          const { count } = await supabase
+            .from('group_members')
+            .select('*', { count: 'exact', head: true })
+            .eq('group_id', group.id)
+          return { ...group, memberCount: count || 0 }
+        })
+      )
+
+      setGroups(groupsWithCounts)
     } catch (error) {
       toast.error('Error loading groups')
       console.error(error)
@@ -58,7 +71,6 @@ export default function Groups() {
       const { data: { user } } = await supabase.auth.getUser()
       const code = generateInviteCode()
 
-      // Create group
       const { data: group, error: groupError } = await supabase
         .from('groups')
         .insert({
@@ -71,7 +83,6 @@ export default function Groups() {
 
       if (groupError) throw groupError
 
-      // Add creator as member
       const { error: memberError } = await supabase
         .from('group_members')
         .insert({
@@ -98,7 +109,6 @@ export default function Groups() {
     try {
       const { data: { user } } = await supabase.auth.getUser()
 
-      // Find group by invite code
       const { data: group, error: groupError } = await supabase
         .from('groups')
         .select('id')
@@ -110,7 +120,6 @@ export default function Groups() {
         return
       }
 
-      // Check if already a member
       const { data: existing } = await supabase
         .from('group_members')
         .select('id')
@@ -123,7 +132,6 @@ export default function Groups() {
         return
       }
 
-      // Add as member
       const { error: memberError } = await supabase
         .from('group_members')
         .insert({
@@ -145,20 +153,35 @@ export default function Groups() {
   }
 
   if (loading) {
-    return <p>Loading groups...</p>
+    return (
+      <div className="flex items-center justify-center py-20">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+          <p className="text-muted text-sm">Loading groups...</p>
+        </div>
+      </div>
+    )
   }
 
   return (
     <div>
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-bold">My Groups</h2>
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
+        <div>
+          <h2 className="text-2xl font-bold text-foreground">My Groups</h2>
+          <p className="text-sm text-muted mt-1">{groups.length} group{groups.length !== 1 ? 's' : ''}</p>
+        </div>
         <div className="flex gap-2">
           <button
             onClick={() => {
               setShowJoinForm(!showJoinForm)
               setShowCreateForm(false)
             }}
-            className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              showJoinForm
+                ? 'bg-card border border-border text-muted'
+                : 'bg-success/10 text-success border border-success/20 hover:bg-success/20'
+            }`}
           >
             Join Group
           </button>
@@ -167,32 +190,36 @@ export default function Groups() {
               setShowCreateForm(!showCreateForm)
               setShowJoinForm(false)
             }}
-            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              showCreateForm
+                ? 'bg-card border border-border text-muted'
+                : 'bg-accent text-white hover:bg-accent-hover'
+            }`}
           >
-            Create Group
+            + Create Group
           </button>
         </div>
       </div>
 
       {/* Create Group Form */}
       {showCreateForm && (
-        <div className="bg-white p-6 rounded-lg shadow mb-6">
-          <h3 className="text-lg font-semibold mb-4">Create New Group</h3>
+        <div className="bg-card border border-border rounded-xl p-6 mb-6">
+          <h3 className="text-lg font-semibold text-foreground mb-4">Create New Group</h3>
           <form onSubmit={handleCreateGroup} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium mb-1">Group Name</label>
+              <label className="block text-sm font-medium text-muted mb-1.5">Group Name</label>
               <input
                 type="text"
                 value={groupName}
                 onChange={(e) => setGroupName(e.target.value)}
-                className="w-full px-3 py-2 border rounded-md"
-                placeholder="Study Group"
+                className="w-full px-3 py-2.5 bg-background border border-border rounded-lg text-foreground text-sm focus:outline-none focus:border-accent transition-colors"
+                placeholder="e.g. Study Group"
                 required
               />
             </div>
             <button
               type="submit"
-              className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+              className="w-full px-4 py-2.5 bg-accent text-white rounded-lg text-sm font-medium hover:bg-accent-hover transition-colors"
             >
               Create Group
             </button>
@@ -202,16 +229,16 @@ export default function Groups() {
 
       {/* Join Group Form */}
       {showJoinForm && (
-        <div className="bg-white p-6 rounded-lg shadow mb-6">
-          <h3 className="text-lg font-semibold mb-4">Join Group</h3>
+        <div className="bg-card border border-border rounded-xl p-6 mb-6">
+          <h3 className="text-lg font-semibold text-foreground mb-4">Join Group</h3>
           <form onSubmit={handleJoinGroup} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium mb-1">Invite Code</label>
+              <label className="block text-sm font-medium text-muted mb-1.5">Invite Code</label>
               <input
                 type="text"
                 value={inviteCode}
                 onChange={(e) => setInviteCode(e.target.value)}
-                className="w-full px-3 py-2 border rounded-md uppercase"
+                className="w-full px-3 py-2.5 bg-background border border-border rounded-lg text-foreground text-sm uppercase tracking-wider focus:outline-none focus:border-accent transition-colors"
                 placeholder="ABC123"
                 maxLength={6}
                 required
@@ -219,7 +246,7 @@ export default function Groups() {
             </div>
             <button
               type="submit"
-              className="w-full px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+              className="w-full px-4 py-2.5 bg-success text-white rounded-lg text-sm font-medium hover:bg-success-hover transition-colors"
             >
               Join Group
             </button>
@@ -227,31 +254,47 @@ export default function Groups() {
         </div>
       )}
 
-      {/* Groups List */}
-      <div className="grid gap-4">
-        {groups.length === 0 ? (
-          <p className="text-center text-gray-500 py-8">No groups yet. Create or join one!</p>
-        ) : (
-          groups.map((group) => (
-            <div key={group.id} className="bg-white p-6 rounded-lg shadow">
+      {/* Groups Grid */}
+      {groups.length === 0 ? (
+        <div className="bg-card border border-border rounded-xl p-12 text-center">
+          <svg className="w-12 h-12 mx-auto text-muted/40 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+          <p className="text-muted text-sm">No groups yet. Create or join one!</p>
+        </div>
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2">
+          {groups.map((group) => (
+            <Link
+              key={group.id}
+              href={`/dashboard/groups/${group.id}`}
+              className="block bg-card border border-border rounded-xl p-6 hover:bg-card-hover hover:border-border-light transition-colors group"
+            >
               <div className="flex justify-between items-start">
-                <div>
-                  <h3 className="text-xl font-semibold">{group.name}</h3>
-                  <p className="text-sm text-gray-600 mt-1">
-                    Invite Code: <span className="font-mono font-bold">{group.invite_code}</span>
-                  </p>
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-lg font-semibold text-foreground group-hover:text-accent-hover transition-colors truncate">
+                    {group.name}
+                  </h3>
+                  <div className="flex items-center gap-3 mt-2">
+                    <span className="inline-flex items-center gap-1.5 text-xs text-muted">
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
+                      {group.memberCount} member{group.memberCount !== 1 ? 's' : ''}
+                    </span>
+                    <span className="text-xs text-muted">
+                      Code: <span className="font-mono font-bold text-foreground/70">{group.invite_code}</span>
+                    </span>
+                  </div>
                 </div>
-                <Link
-                  href={`/dashboard/groups/${group.id}`}
-                  className="px-4 py-2 bg-blue-100 text-blue-700 rounded-md hover:bg-blue-200"
-                >
-                  View Schedule
-                </Link>
+                <svg className="w-5 h-5 text-muted group-hover:text-accent-hover transition-colors flex-shrink-0 mt-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
               </div>
-            </div>
-          ))
-        )}
-      </div>
+            </Link>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
